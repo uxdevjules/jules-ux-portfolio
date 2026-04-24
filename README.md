@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Jules — Portfolio
 
-## Getting Started
+Personal portfolio site styled as a Claude-style terminal. Type commands to explore.
 
-First, run the development server:
+Built with Next.js 15, React 19, TypeScript, Tailwind CSS v4.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Commands in the site
+
+```
+help         list commands
+about        bio
+experience   work history
+projects     list case studies
+open <slug>  open a case study
+skills       research, design, tools
+contact      email + links
+clear        clear the screen
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Keyboard: ↑/↓ cycle history · Tab autocompletes · Ctrl/Cmd+L clears.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev     # http://localhost:3000
+npm run build   # production build
+npm run lint
+```
 
-## Learn More
+## Where to edit content
 
-To learn more about Next.js, take a look at the following resources:
+All portfolio content lives in one file: **`lib/content.tsx`**.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `profile` — name, role, tagline, contact links
+- `bio` — paragraphs for the `about` command
+- `experience` — timeline entries
+- `skills` — categorized skill lists
+- `projects` — case studies rendered by `open <slug>`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Visual tokens (colors, fonts) live in `app/globals.css`.
 
-## Deploy on Vercel
+## Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Pushes to GitHub auto-deploy to Vercel (see `DEPLOY.md`).
