@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
+import { Geist_Mono, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistMono = Geist_Mono({
@@ -7,13 +7,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
-  title: "jules — portfolio",
+  title: "jules@portfolio — terminal",
   description:
-    "Jules is a UX designer. This portfolio runs like a Claude terminal — type 'help' to get started.",
+    "Jules — UX designer + frontend developer. Portfolio styled as a Claude terminal. Type 'help' to get started.",
   openGraph: {
-    title: "jules — portfolio",
-    description: "UX designer. Terminal-style portfolio.",
+    title: "jules@portfolio — terminal",
+    description: "UX designer + frontend developer. Terminal-style portfolio.",
     type: "website",
   },
 };
@@ -26,9 +32,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistMono.variable} h-full antialiased`}
+      className={`${geistMono.variable} ${jetbrainsMono.variable} antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

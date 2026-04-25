@@ -6,40 +6,42 @@ import {
   bootLines,
   runCommand,
 } from "@/lib/commands";
-import { WindowChrome, type Mode } from "./WindowChrome";
-import { CommandChips } from "./CommandChips";
+import type { Mode, TerminalLine } from "@/lib/types";
 import { NormalView } from "./NormalView";
 
-type Line = { id: number; node: React.ReactNode };
+const TIP_STORAGE_KEY = "jules:normal-tip-seen";
+const RAIL_CHIPS = ["help", "about", "projects", "experience", "skills", "contact"];
 
 export function Terminal() {
   const [mode, setMode] = useState<Mode>("terminal");
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<TerminalLine[]>([]);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState<number>(-1);
   const [booted, setBooted] = useState(false);
+  const [showTip, setShowTip] = useState(false);
+  const [ghostHint, setGhostHint] = useState(true);
+  const [clock, setClock] = useState<Date | null>(null);
+  const [stats, setStats] = useState({ cpu: 0.18, mem: 0.42 });
+
   const nextId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const pushLine = useCallback((node: React.ReactNode) => {
-    setLines((prev) => [
-      ...prev,
-      { id: nextId.current++, node },
-    ]);
+    setLines((prev) => [...prev, { id: nextId.current++, node }]);
   }, []);
 
   const clear = useCallback(() => setLines([]), []);
 
-  // boot sequence — progressive reveal (terminal mode only)
+  // Boot sequence
   useEffect(() => {
     let cancelled = false;
     const boot = bootLines();
     (async () => {
       for (const node of boot) {
         if (cancelled) return;
-        await new Promise((r) => setTimeout(r, 90));
+        await new Promise((r) => setTimeout(r, 110));
         pushLine(node);
       }
       if (!cancelled) setBooted(true);
@@ -49,31 +51,60 @@ export function Terminal() {
     };
   }, [pushLine]);
 
-  // scroll to the end marker when content changes (terminal mode)
+  // Live clock + jittery system stats (chrome decoration)
   useEffect(() => {
-    if (mode !== "terminal") return;
-    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    setClock(new Date());
+    const t = setInterval(() => {
+      setClock(new Date());
+      setStats((s) => ({
+        cpu: Math.max(0.05, Math.min(0.95, s.cpu + (Math.random() - 0.5) * 0.08)),
+        mem: Math.max(0.2, Math.min(0.85, s.mem + (Math.random() - 0.5) * 0.04)),
+      }));
+    }, 1500);
+    return () => clearInterval(t);
+  }, []);
+
+  // Auto-scroll the log container as new lines come in
+  useEffect(() => {
+    if (mode !== "terminal" || !scrollRef.current) return;
+    const el = scrollRef.current;
+    el.scrollTop = el.scrollHeight;
   }, [lines, booted, mode]);
+
+  // Restore tooltip dismissal across visits
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const seen = window.localStorage.getItem(TIP_STORAGE_KEY);
+    if (!seen) setShowTip(true);
+  }, []);
+
+  const dismissTip = useCallback(() => {
+    setShowTip(false);
+    try {
+      window.localStorage.setItem(TIP_STORAGE_KEY, "1");
+    } catch {
+      /* storage unavailable — fine, just hide for this session */
+    }
+  }, []);
 
   const toggleMode = () => {
     setMode((m) => (m === "terminal" ? "normal" : "terminal"));
-    // reset scroll on mode switch so user isn't dropped mid-content
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    dismissTip();
   };
 
-  // focus input when user clicks inside terminal (desktop UX)
-  const focusInput = () => {
+  const focusInput: React.MouseEventHandler<HTMLDivElement> = (e) => {
     if (mode !== "terminal" || !booted) return;
     const sel = window.getSelection();
     if (sel && sel.toString().length > 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("a") || target?.closest("button")) return;
     inputRef.current?.focus();
   };
 
   const submit = (raw: string) => {
     const cmd = raw.trim();
     pushLine(<PromptEcho cmd={raw} />);
+    setGhostHint(false);
     if (!cmd) return;
     setHistory((h) => [...h, cmd]);
     setHistIdx(-1);
@@ -86,6 +117,7 @@ export function Terminal() {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setGhostHint(false);
     if (e.key === "Enter") {
       e.preventDefault();
       submit(input);
@@ -118,78 +150,242 @@ export function Terminal() {
     }
   };
 
+  const timeStr = clock
+    ? clock.toLocaleTimeString("en-GB", { hour12: false })
+    : "--:--:--";
+  const dateStr = clock
+    ? clock
+        .toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+        .toLowerCase()
+    : "";
+
   return (
-    <div
-      className="min-h-[100svh] flex flex-col p-2 sm:p-6"
-      onClick={focusInput}
-    >
-      <div className="mx-auto w-full max-w-4xl flex-1 flex flex-col rounded-lg border border-[var(--muted-2)] bg-[var(--background)] shadow-2xl overflow-hidden">
-        <WindowChrome mode={mode} onToggleMode={toggleMode} />
+    <div className="term-shell" onClick={focusInput}>
+      <div className="term-window">
+        {/* Window chrome */}
+        <header className="term-chrome">
+          <div className="chrome-dots">
+            <span className="dot dot-r" />
+            <span className="dot dot-y" />
+            <span className="dot dot-g" />
+          </div>
+          <div className="chrome-title">
+            <span className="t-dim">jules@portfolio</span>
+            <span className="t-mute"> · </span>
+            <span>~/portfolio</span>
+            <span className="t-mute"> · </span>
+            <span className="t-dim">zsh</span>
+          </div>
+          <div className="chrome-stats">
+            <StatBar label="cpu" v={stats.cpu} />
+            <StatBar label="mem" v={stats.mem} />
+            <span className="chrome-clock">{timeStr}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleMode();
+              }}
+              className="chrome-mode"
+              aria-label={`switch to ${
+                mode === "terminal" ? "normal" : "terminal"
+              } mode`}
+            >
+              {mode === "terminal" ? "normal mode →" : "← terminal"}
+            </button>
+          </div>
+          {showTip && booted && mode === "terminal" && (
+            <div role="status" className="term-tooltip">
+              <div className="term-tooltip-body">
+                <span>
+                  <span className="t-dim">new here? try </span>
+                  <span className="t-acc">normal mode</span>
+                  <span className="t-dim"> — easier to read.</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissTip();
+                  }}
+                  aria-label="dismiss hint"
+                  className="term-tooltip-x"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+        </header>
+
+        {/* Tab bar */}
+        <div className="term-tabs">
+          <div className="tab tab-active">
+            <span className="tab-dot" />
+            <span>portfolio</span>
+            {dateStr && <span className="t-dim"> · {dateStr}</span>}
+          </div>
+          <div className="tab tab-add">+</div>
+          <div className="tabs-spacer" />
+          <div className="tab-meta">
+            <span className="t-dim">conn</span>
+            <span className="conn-bar">
+              <span /><span /><span /><span />
+            </span>
+          </div>
+        </div>
 
         {mode === "terminal" ? (
           <>
             <div
-              className="px-3 sm:px-5 py-3 text-[13px] sm:text-[13.5px] leading-relaxed"
+              ref={scrollRef}
+              className="term-output"
               role="log"
               aria-live="polite"
               aria-label="terminal output"
             >
-              {lines.map((l) => (
-                <div key={l.id}>{l.node}</div>
-              ))}
-              {booted && (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    submit(input);
-                    setInput("");
-                  }}
-                  className="flex items-center gap-0 flex-wrap"
-                >
-                  <Prompt />
-                  <input
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    autoFocus
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    autoComplete="off"
-                    className="flex-1 min-w-[4ch] bg-transparent outline-none caret-[var(--accent)] text-[var(--foreground)]"
-                    aria-label="terminal input"
-                  />
-                </form>
-              )}
-              <div ref={endRef} />
+              <div className="term-content">
+                {lines.map((l, i) => (
+                  <div
+                    key={l.id}
+                    className="term-line-wrap"
+                    style={{ animationDelay: `${Math.min(i, 8) * 20}ms` }}
+                  >
+                    {l.node}
+                  </div>
+                ))}
+                {booted && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submit(input);
+                      setInput("");
+                    }}
+                    className="term-prompt-form"
+                  >
+                    <Prompt />
+                    <div className="term-input-wrap">
+                      <input
+                        ref={inputRef}
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value);
+                          setGhostHint(false);
+                        }}
+                        onKeyDown={onKeyDown}
+                        autoFocus
+                        spellCheck={false}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        autoComplete="off"
+                        className="term-input"
+                        aria-label="terminal input"
+                      />
+                      {!input && ghostHint && (
+                        <span className="term-ghost">
+                          about
+                          <span className="ghost-hint">↵ try this</span>
+                        </span>
+                      )}
+                      <span
+                        className={`term-caret ${
+                          input ? "is-typing" : "is-idle"
+                        }`}
+                      />
+                    </div>
+                  </form>
+                )}
+              </div>
             </div>
-            <CommandChips onPick={(c) => submit(c)} />
+
+            {/* Quick rail */}
+            <footer className="term-rail">
+              <div className="rail-label">
+                <span className="t-dim">▸</span> quick
+              </div>
+              <div className="rail-chips">
+                {RAIL_CHIPS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="rail-chip"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      submit(c);
+                    }}
+                  >
+                    {c}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="rail-chip rail-chip-clear"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clear();
+                  }}
+                >
+                  clear
+                </button>
+              </div>
+              <div className="rail-hints">
+                <kbd>↑↓</kbd>
+                <span className="t-dim">history</span>
+                <kbd>tab</kbd>
+                <span className="t-dim">complete</span>
+                <kbd>⌘L</kbd>
+                <span className="t-dim">clear</span>
+              </div>
+            </footer>
           </>
         ) : (
-          <NormalView />
+          <div className="term-output">
+            <NormalView />
+          </div>
         )}
       </div>
+
+      <div className="grain-overlay" aria-hidden />
+      <div className="vignette" aria-hidden />
     </div>
   );
 }
 
 function Prompt() {
   return (
-    <span className="shrink-0 select-none">
-      <span className="text-[var(--accent)]">jules@portfolio</span>
-      <span className="text-[var(--muted)]"> ~ </span>
-      <span className="text-[var(--accent)]">%</span>
-      <span>&nbsp;</span>
+    <span className="term-prompt">
+      <span className="t-acc">jules</span>
+      <span className="t-mute">@</span>
+      <span className="t-fg">portfolio</span>
+      <span className="t-mute"> </span>
+      <span className="t-acc-2">~</span>
+      <span className="t-mute"> </span>
+      <span className="t-acc">❯</span>
+      <span>{" "}</span>
     </span>
   );
 }
 
 function PromptEcho({ cmd }: { cmd: string }) {
   return (
-    <div className="flex flex-wrap">
+    <div className="term-echo flex flex-wrap">
       <Prompt />
-      <span>{cmd}</span>
+      <span className="t-fg">{cmd}</span>
     </div>
+  );
+}
+
+function StatBar({ label, v }: { label: string; v: number }) {
+  const cells = 8;
+  const filled = Math.round(v * cells);
+  return (
+    <span className="stat">
+      <span className="t-dim">{label}</span>
+      <span className="stat-bar">
+        {Array.from({ length: cells }, (_, i) => (
+          <span key={i} className={`stat-cell ${i < filled ? "on" : ""}`} />
+        ))}
+      </span>
+    </span>
   );
 }
